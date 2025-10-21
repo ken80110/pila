@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>皮拉提斯全方位互動教練手冊 (完整版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calming Neutrals -->
+    <!-- Application Structure Plan: The application is designed as an interactive dashboard. The main screen presents a grid of clickable "category cards" (11 symptom-based plans + 1 knowledge base). Clicking a card dynamically loads the corresponding detailed content into a central area. Workout plans use collapsible accordions for each exercise, and the knowledge base is a structured text document. This task-oriented architecture allows a coach to instantly access either a specific workout or background information on a symptom, making it vastly more efficient than a linear document. -->
+    <!-- Visualization & Content Choices: Report Info: 11 distinct workout plans and detailed symptom explanations. -> Goal: Provide an at-a-glance overview and deep, accessible knowledge. -> Viz/Presentation Method: A bar chart (Chart.js) visualizes exercise counts per plan for quick comparison. The core content is presented via a card-based navigation system leading to either accordion-based workout plans or a well-structured text page for the glossary. -> Interaction: Users click a category card to load content; within plans, they click exercise headers to expand/collapse details. -> Justification: This transforms a comprehensive but dense manual into a practical, dual-purpose tool for both in-session guidance and deeper learning. The structure separates "doing" (workouts) from "knowing" (glossary) for superior usability. -> Library/Method: Vanilla JS for DOM manipulation; Chart.js for the overview. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #FDFBF8;
+            color: #4A4A4A;
+        }
+        .active-nav-button {
+            background-color: #8D9B87 !important;
+            color: #FFFFFF !important;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+        }
+        .nav-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .accordion-header {
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .accordion-header:hover {
+            background-color: #F1F3EF;
+        }
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-out, padding 0.5s ease-out;
+            padding: 0 1.5rem;
+        }
+        .accordion-content.open {
+            max-height: 1200px;
+            padding: 1rem 1.5rem 1.5rem;
+        }
+        .fade-in {
+            animation: fadeIn 0.7s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 900px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 320px;
+            max-height: 400px;
+        }
+        @media (min-width: 640px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-[#5C6B57]">皮拉提斯全方位互動教練手冊</h1>
+            <p class="mt-2 text-lg text-gray-600">對症查找｜深度解析｜一鍵即得</p>
+        </header>
+
+        <nav id="symptom-navigation" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 mb-8">
+        </nav>
+
+        <main id="content-display" class="bg-white rounded-2xl shadow-lg p-6 min-h-[500px] w-full">
+        </main>
+    </div>
+
+    <!-- ########## TEMPLATES ########## -->
+
+    <template id="welcome-screen-template">
+        <div class="fade-in flex flex-col items-center justify-center h-full text-center">
+             <h2 class="text-2xl font-bold text-[#5C6B57] mb-4">歡迎使用全方位教練手冊</h2>
+             <p class="text-gray-600 mb-6 max-w-2xl">請從上方選擇一個<span class="font-bold text-[#8D9B87]">症狀</span>載入訓練課程，或點擊<span class="font-bold text-[#8D9B87]">症狀百科</span>深入了解成因。本工具旨在將複雜的課程計畫轉化為清晰、易於查找的互動格式。</p>
+             <div class="chart-container">
+                <canvas id="overviewChart"></canvas>
+             </div>
+             <div class="mt-8 text-left w-full max-w-3xl">
+                <h3 class="font-bold text-xl text-center text-[#5C6B57] mb-4">課程目錄總覽</h3>
+                <ul class="space-y-1 text-gray-700 sm:columns-2">
+                    <li><strong>第一章：</strong> 圓肩、駝背、烏龜頸</li>
+                    <li><strong>第二章：</strong> 骨盆前傾、長期腰痠</li>
+                    <li><strong>第三章：</strong> 脊椎側彎、高低肩</li>
+                    <li><strong>第四章：</strong> 扁平足、膝內扣/外翻</li>
+                    <li><strong>第五章：</strong> 翼狀肩、肩頸僵硬</li>
+                    <li><strong>第六章：</strong> 肋骨外翻、骨盆後傾</li>
+                    <li><strong>第七章：</strong> 膝蓋疼痛、髖關節活動不佳</li>
+                    <li><strong>第八章：</strong> 懷孕初期 (1-13週)</li>
+                    <li><strong>第九章：</strong> 懷孕中期 (14-27週)</li>
+                    <li><strong>第十章：</strong> 懷孕後期 (28週後)</li>
+                    <li><strong>第十一章：</strong> 無任何症狀者</li>
+                </ul>
+             </div>
+        </div>
+    </template>
+
+    <template id="chapter-1-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第一章：改善圓肩、駝背、烏龜頸</h2>
+            <p class="text-gray-600 mb-6">本課程專注於打開胸腔、強化背部肌群、伸展胸前緊繃肌肉，並建立正確的肩胛與頸部排列。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 核心床 (REFORMER)、梯桶 (LADDER BARREL)、墊上 (MAT)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 胸椎伸展、背肌強化、肩胛穩定、核心連結</li></ul></div>
+            <div class="space-y-4">
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 墊上動作：貓牛式</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們在墊上開始今天的練習。」</p><p><strong>N:</strong> 「我們要做的第一個暖身動作是貓牛式。」</p><p><strong>P:</strong> 「這個動作的目的是為了溫和地活動我們的每一節脊椎，增加脊椎的靈活性，為接下來的訓練做準備。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請來到四足跪姿，手腕在肩膀正下方，膝蓋在骨盆正下方，脊椎保持在中立位。」</li><li><strong>ACTION:</strong> 「吸氣時，我們做牛式，從尾骨開始延伸，頭跟尾巴往上找，胸口擴張開來。吐氣時，我們做貓式，從尾骨開始內收，腹部收緊，背部拱起，眼睛看向肚臍。」</li><li><strong>DETAILS:</strong> 「動作時，專注在脊椎一節一節的活動上。保持肩膀遠離耳朵，不要聳肩。」</li><li><strong>TRANSITION:</strong> 「我們將在這裡進行8-10次的呼吸。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 核心床：FOOTWORK - Toes</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「這個是我們的核心床。」</p><p><strong>N:</strong> 「我們要做的動作是足部運動的腳趾球踩姿。」</p><p><strong>P:</strong> 「這個動作可以喚醒我們的足底、啟動下肢力量，並在躺姿下建立核心與脊椎的連結。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請仰躺在核心床上，肩膀靠著肩擋，腳趾球踩在腳桿上，雙腳與坐骨同寬。」</li><li><strong>ACTION:</strong> 「吐氣時，腹部收緊，感覺大腿前側與臀部發力，將床推出去。吸氣，有控制地讓彈簧把床帶回來。」</li><li><strong>DETAILS:</strong> 「注意保持骨盆的穩定，不要晃動。回來的時候，想像你在對抗彈簧，慢慢地回來。」</li><li><strong>TRANSITION:</strong> 「我們重複10-12次。如果覺得腳踝不穩定，可以先換到腳跟的姿勢。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 核心床：Serve a tray</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們繼續使用核心床。」</p><p><strong>N:</strong> 「我們要做的動作是面腳桿手臂運動中的送餐盤。」</p><p><strong>P:</strong> 「這個動作可以訓練我們肩胛骨的穩定肌群，特別是前鋸肌與下斜方肌，幫助我們改善圓肩與穩定肩胛。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請高跪姿或站姿在核心床上，面向腳桿，雙手拉住繩帶，手肘彎曲90度，手掌朝上。」</li><li><strong>ACTION:</strong> 「吐氣，核心收緊，手臂慢慢地往前推，送到肩膀的高度。吸氣，有控制地將手肘帶回到身體兩側。」</li><li><strong>DETAILS:</strong> 「全程保持肩膀下沉，不要聳肩。想像你的肩胛骨是穩穩地貼在你的背上。」</li><li><strong>TRANSITION:</strong> 「如果太輕鬆，可以增加彈簧重量。如果覺得困難，可以減少彈簧或縮短動作的幅度。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 核心床：Pulling straps+chest stretch</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「請在核心床上放上長箱。」</p><p><strong>N:</strong> 「我們要做的動作是長箱拉繩的拉繩加上胸部伸展。」</p><p><strong>P:</strong> 「這個動作可以強化我們整個背部的肌群，同時有效地伸展因駝背而緊繃的胸大肌與前三角肌。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請趴在長箱上，胸口來到箱子邊緣，雙手向前抓住繩帶。」</li><li><strong>ACTION:</strong> 「吐氣時，核心收緊，將繩帶向後拉，同時將上半身微微抬起，感覺肩胛骨向中間收。吸氣，有控制地回到起始位置。」</li><li><strong>DETAILS:</strong> 「頸部保持放鬆，視線看向斜下方。專注在背部肌群的發力，想像用肩胛骨把繩帶夾回來。」</li><li><strong>TRANSITION:</strong> 「如果想加強，可以在動作頂點停留2-3秒。如果感到下背壓力，請確認核心是否有收緊。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】5. 梯桶：SWAN</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「現在我們換到梯桶。」</p><p><strong>N:</strong> 「我們要做的動作是天鵝式。」</p><p><strong>P:</strong> 「這個動作是非常好的胸椎伸展訓練，可以對抗我們日常駝背的姿勢，強化背部伸展肌群。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請趴在桶子上，骨盆最凸點靠著桶子頂端，雙腳踩在梯子上，雙手輕輕握住梯子兩側。」</li><li><strong>ACTION:</strong> 「吸氣時，感覺脊椎向上延伸，將上半身慢慢抬離桶子，胸口打開。吐氣，有控制地，一節一節將脊椎放回到桶子上。」</li><li><strong>DETAILS:</strong> 「想像你的頭頂有一條線把你往上拉長，而不是向後折你的脖子或腰。臀部和核心要保持收緊。」</li><li><strong>TRANSITION:</strong> 「進階挑戰：可以在上半身抬起時，將雙手放開。退階方式：減少抬起的幅度。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】6. 梯桶：SIDE BENDING</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們繼續使用梯桶。」</p><p><strong>N:</strong> 「我們要做的伸展是側彎。」</p><p><strong>P:</strong> 「這個動作可以伸展我們的身體側線，增加脊椎側向活動度，釋放背部壓力。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請側身站在桶邊，靠近桶子的腳在前，另一隻腳在後踩穩梯子，身體靠在桶子上。」</li><li><strong>ACTION:</strong> 「吐氣時，身體順著桶子的弧度向側邊彎過去，感覺體側完全的伸展。吸氣，慢慢地回到起始位置。」</li><li><strong>DETAILS:</strong> 「保持骨盆和肩膀在一個平面上。專注在呼吸，吸氣到你伸展的側邊肋骨。」</li><li><strong>TRANSITION:</strong> 「每一邊我們停留30-45秒。完成後，小心地換邊操作。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】7. 墊上動作：鳥狗式</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「最後我們回到墊上做緩和。」</p><p><strong>N:</strong> 「我們要做的緩和動作是鳥狗式。」</p><p><strong>P:</strong> 「這個動作可以訓練我們核心的穩定性，並在動態中練習身體的協調與平衡。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「回到四足跪姿，核心收緊，背部平坦。」</li><li><strong>ACTION:</strong> 「吐氣時，穩定住核心，將對側的手和腳慢慢地延伸出去，身體像一條直線。吸氣，有控制地回到起始位置。」</li><li><strong>DETAILS:</strong> 「動作過程中，保持骨盆和軀幹的穩定，想像你的背上放了一杯水。手和腳是向遠方延伸，而不是向上抬高。」</li><li><strong>TRANSITION:</strong> 「如果覺得不穩定，可以先只動手或只動腳。我們左右交替，各做8-10次。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-2-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第二章：改善骨盆前傾、長期腰痠</h2>
+            <p class="text-gray-600 mb-6">本課程旨在喚醒無力的臀肌與腹部核心，同時放鬆緊繃的髖屈肌與下背部，以重建骨盆中立位，緩解腰部壓力。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 脊椎矯正器 (ARC)、穩定椅 (STABILITY CHAIR)、核心床 (REFORMER)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 臀肌啟動、核心強化、髖屈肌伸展、骨盆穩定</li></ul></div>
+            <div class="space-y-4">
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 脊椎矯正器：下捲</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「這個是我們的脊椎矯正器。」</p><p><strong>N:</strong> 「我們要做的暖身動作是下捲 (ROLL DOWN)。」</p><p><strong>P:</strong> 「這個動作可以溫和地啟動我們的腹部核心，同時一節一節地活動脊椎，增加本體感覺。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請坐在ARC的前端，雙腳屈膝踩地，雙手可以抱在胸前或輕扶大腿後側。」</li><li><strong>ACTION:</strong> 「吐氣時，從骨盆開始向後滾動，感覺腹部向內收，讓脊椎一節一節地躺到ARC上。吸氣停留，吐氣時，再從頭部開始，利用腹部的力量，將身體慢慢地捲起來。」</li><li><strong>DETAILS:</strong> 「專注在用腹部的力量控制動作。想像你的腹部像一個C字形，深深地向內凹進去。」</li><li><strong>TRANSITION:</strong> 「如果腹部力量不足，可以用手輕輕地輔助大腿。如果想增加挑戰，可以將雙手伸直向前。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 脊椎矯正器：橋式</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們繼續使用脊椎矯正器。」</p><p><strong>N:</strong> 「下一個動作是橋式 (BRIDGE)。」</p><p><strong>P:</strong> 「這個動作是啟動臀大肌非常好的訓練，對於改善骨盆前傾至關重要，同時也能訓練到核心後側鏈的穩定性。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請仰躺在ARC的頂端，雙腳腳掌踩穩在地面，與坐骨同寬，雙手輕鬆放在身體兩側。」</li><li><strong>ACTION:</strong> 「吐氣時，感覺臀部發力，將骨盆與脊椎一節一節地抬離ARC。吸氣在頂端停留，吐氣再有控制地，從上背開始，一節一節地將脊椎放回。」</li><li><strong>DETAILS:</strong> 「在最高點時，確保你的臀部有收緊，而不是用腰的力量撐住。保持肋骨下沉，不要向外翻。」</li><li><strong>TRANSITION:</strong> 「進階挑戰：可以嘗試單腳橋式。退階方式：減少抬起的高度，專注在臀部的感受度。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 核心床：HUNDRED - knee bent</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「現在我們換到核心床。」</p><p><strong>N:</strong> 「我們要做的動作是百式，膝蓋彎曲的版本。」</p><p><strong>P:</strong> 「百式是經典的核心訓練，能快速提升核心溫度與耐力，強化腹橫肌，幫助穩定骨盆，減輕下背壓力。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「仰躺在核心床上，雙手拉住繩帶，雙腳來到桌子姿，膝蓋在髖關節正上方。」</li><li><strong>ACTION:</strong> 「吐氣，將頭跟肩膀抬離床面，雙手將繩帶下拉到臀部兩側。接著開始快速地上下拍打手臂，吸氣拍5下，吐氣拍5下。」</li><li><strong>DETAILS:</strong> 「腹部要一直保持收緊，肚臍下沉。如果脖子酸，可以把頭放下來做。」</li><li><strong>TRANSITION:</strong> 「進階挑戰：可以將雙腳伸直。退階方式：將頭放下，或將雙腳腳尖輕點地面。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 穩定椅：LEG PRESS</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「接下來我們來到穩定椅。」</p><p><strong>N:</strong> 「我們要做的動作是腿推 (leg press)。」</p><p><strong>P:</strong> 「這個動作可以強化我們臀部和大腿後側的力量，同時在單腳站立時挑戰我們的核心穩定與平衡。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「站在椅子前方，一隻腳的腳跟踩在踏板上，另一隻腳穩定站立，身體保持直立。」</li><li><strong>ACTION:</strong> 「吐氣，用踩在踏板上的那隻腳的臀腿力量，將踏板向下踩到底。吸氣，有控制地讓踏板慢慢回到起始位置。」</li><li><strong>DETAILS:</strong> 「注意保持骨盆的穩定，不要因為踩踏板而左右晃動或旋轉。專注在感受臀部發力。」</li><li><strong>TRANSITION:</strong> 「如果覺得太重，可以減輕彈簧。如果想增加挑戰，可以嘗試閉上眼睛。完成一邊後換腳。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】5. 核心床：FEET IN STRAPS - Frog</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們再次回到核心床。」</p><p><strong>N:</strong> 「我們要做的動作是腳踩繩帶的青蛙式。」</p><p><strong>P:</strong> 「這個動作可以訓練到大腿內收肌群與核心的連結，同時溫和地打開髖關節。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「仰躺在核心床上，雙腳的足弓套上繩帶，雙腳腳跟併攏，腳尖分開呈現V字，膝蓋彎曲向外打開。」</li><li><strong>ACTION:</strong> 「吐氣，用大腿內側和臀部的力量將雙腿向前45度角踢出去。吸氣，有控制地將膝蓋彎曲，回到起始的青蛙姿。」</li><li><strong>DETAILS:</strong> 「全程保持下背部的穩定，不要拱起來。腹部要持續收緊，以維持骨盆的中立。」</li><li><strong>TRANSITION:</strong> 「如果覺得下背有壓力，可以將腿踢高一點。如果想增加挑戰，可以放慢動作的速度。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】6. 核心床：MERMAID</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們繼續在核心床上進行伸展。」</p><p><strong>N:</strong> 「我們要做的伸展動作是美人魚。」</p><p><strong>P:</strong> 「這個動作可以伸展我們的腰方肌與體側，對於緩解因骨盆歪斜或久坐造成的單側腰痠非常有效。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請側坐在床上，雙腿交疊，一隻手輕輕抓住腳桿，另一隻手向上延伸。」</li><li><strong>ACTION:</strong> 「吐氣時，抓住腳桿的手將床推出去，身體向腳桿方向側彎。吸氣，有控制地將床帶回來。」</li><li><strong>DETAILS:</strong> 「伸展時，臀部要保持坐在床面上，不要翹起來。肩膀放鬆，不要聳肩。」</li><li><strong>TRANSITION:</strong> 「我們在一邊停留3-5個呼吸，然後換邊操作。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】7. 核心床：LUNGES</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「最後一個伸展，我們一樣在核心床上完成。」</p><p><strong>N:</strong> 「我們要做的伸展是弓箭步。」</p><p><strong>P:</strong> 「這個動作是伸展髖屈肌最有效的方式之一，能直接幫助改善因髖屈肌緊繃造成的骨盆前傾與下背痛。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「站在核心床旁邊，一隻腳踩在地面，另一隻腳的膝蓋或腳背放在床板上。雙手可以扶著腳桿保持平衡。」</li><li><strong>ACTION:</strong> 「吐氣時，輕輕將床向後推，直到感覺放在床上的那條腿，其大腿前側有明顯的伸展感。吸氣停留。」</li><li><strong>DETAILS:</strong> 「保持骨盆朝向正前方，不要歪斜。核心收緊，微微將骨盆後傾，可以加深髖屈肌的伸展感。」</li><li><strong>TRANSITION:</strong> 「我們在這邊停留30-45秒。完成後，小心地換邊。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-3-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第三章：改善脊椎側彎、高低肩</h2>
+            <p class="text-gray-600 mb-6">本課程設計著重於建立脊椎的中心線覺知，透過單側及不對稱訓練，強化側彎凹側無力的核心與背肌，同時伸展放鬆凸側緊繃的肌群。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 凱迪拉克床 (CADILLAC)、穩定椅 (STABILITY CHAIR)、墊上 (MAT)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 核心穩定、單側強化、脊椎延伸、本體感覺建立</li></ul></div>
+            <div class="space-y-4">
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 墊上動作：貓牛式</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們在墊上開始，找回身體中心的感覺。」</p><p><strong>N:</strong> 「我們要做的動作是貓牛式。」</p><p><strong>P:</strong> 「這個動作的目的是為了溫和地喚醒並活動整條脊椎，增加你對脊椎排列的覺察。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請來到四足跪姿，雙手在肩下方，膝蓋在髖關節下方。」</li><li><strong>ACTION:</strong> 「吸氣，做牛式，溫和地將胸口打開。吐氣，做貓式，將腹部內收，背部溫和地拱起。」</li><li><strong>DETAILS:</strong> 「在動作中特別去感受脊椎兩側肌肉的用力是否均等。在貓式時，可以嘗試將氣息吸到比較緊繃或凹陷的那一側。」</li><li><strong>TRANSITION:</strong> 「我們緩慢地進行8-10次呼吸。專注於動作的品質，而非幅度。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 凱迪拉克床：scap depression/elevation</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「這個是我們的凱迪拉克床。」</p><p><strong>N:</strong> 「我們要做的動作是坐姿推杆的肩胛骨上提下壓。」</p><p><strong>P:</strong> 「這個動作可以喚醒並教育你的肩胛穩定肌群，對於改善高低肩非常重要。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請背對推杆坐著，雙手比肩膀略寬，掌心朝下握住推杆。」</li><li><strong>ACTION:</strong> 「吸氣時，讓彈簧輕輕地將你的肩膀向上帶。吐氣時，啟動背部下方的力量，主動地將肩胛骨向下拉。」</li><li><strong>DETAILS:</strong> 「保持你的脖子放鬆，手臂是輕鬆的。專注在感覺肩胛骨在背上的滑動，並且有意識地讓兩邊的肩膀保持在一樣的高度上。」</li><li><strong>TRANSITION:</strong> 「如果感覺一邊比較緊，可以稍微減少動作幅度，專注在啟動弱側的肌肉。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 凱迪拉克床：latt pull with rotation</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們繼續使用凱迪拉克床。」</p><p><strong>N:</strong> 「我們要做的動作是高跪姿手臂彈簧訓練的背闊肌下拉加旋轉。」</p><p><strong>P:</strong> 「這個單邊的動作可以精準地強化你側彎凸側（較弱）的背肌與核心，同時教導脊椎如何在核心穩定的狀況下進行旋轉。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請高跪姿側對彈簧，單手抓住手把，手臂向上伸直。」</li><li><strong>ACTION:</strong> 「吐氣，啟動核心與背部的力量，將手肘向身體側後方拉，同時帶動胸椎做一個溫和的旋轉。吸氣，有控制地回到起始位置。」</li><li><strong>DETAILS:</strong> 「骨盆要像車頭燈一樣，全程保持朝向正前方，不要跟著旋轉。專注在感受側腰與背部的發力。」</li><li><strong>TRANSITION:</strong> 「如果覺得不穩定，可以改成坐姿。想增加挑戰，可以將視線跟隨你的手一起移動。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 穩定椅：CROSSOVER PRESS</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「現在我們來到穩定椅。」</p><p><strong>N:</strong> 「我們要做的動作是交叉腿下推。」</p><p><strong>P:</strong> 「這個動作會挑戰你的骨盆穩定性以及單邊臀部的力量，這對於維持脊椎中立位至關重要。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「站在椅子一側，靠近椅子腳的腳尖踩在踏板上，另一隻腳穩定站好。」</li><li><strong>ACTION:</strong> 「吐氣，用踩著踏板那隻腳的臀部力量，將踏板向下踩。吸氣，有控制地對抗彈簧，慢慢回來。」</li><li><strong>DETAILS:</strong> 「保持你的骨盆水平，不要歪斜。想像你的骨盆上放著一杯水，不能灑出來。」</li><li><strong>TRANSITION:</strong> 「如果很晃，可以扶著牆壁或椅子輔助。完成一邊後我們換邊操作。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】5. 墊上動作：鳥狗式</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們回到墊上，整合身體的力量。」</p><p><strong>N:</strong> 「我們要做的動作是鳥狗式。」</p><p><strong>P:</strong> 「這個動作訓練身體對角線的連結與核心穩定性，幫助你的大腦重新學習如何在四肢活動時，保持軀幹的穩定與中立。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「回到四足跪姿，核心收緊，背部平坦。」</li><li><strong>ACTION:</strong> 「吐氣，穩定住核心，將對側的手和腳慢慢地向遠方延伸出去。吸氣，有控制地回到起始位置。」</li><li><strong>DETAILS:</strong> 「動作越慢，控制越好。專注在維持骨盆和肩膀的穩定，不要翻轉。想像你的脊椎像一根堅固的柱子。」</li><li><strong>TRANSITION:</strong> 「如果穩定，可以在延伸的末端停留2-3秒。如果困難，可以先只動手或只動腳。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】6. 穩定椅：MERMAID</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們使用穩定椅來做伸展。」</p><p><strong>N:</strong> 「我們要做的伸展動作是美人魚。」</p><p><strong>P:</strong> 「這個動作可以非常有效地伸展你側彎凹側（較緊）的體側肌肉，為脊椎創造更多活動空間。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「側坐在椅子上，一隻手壓在踏板上，另一隻手向上延伸。」</li><li><strong>ACTION:</strong> 「吐氣時，手輕輕將踏板下壓，身體向另一側彎曲，感覺體側被拉長。吸氣，慢慢回來。」</li><li><strong>DETAILS:</strong> 「我們會在你比較緊的那一側停留久一點。將你的呼吸送到側邊的肋骨，想像把每一節肋骨的空間都撐開。」</li><li><strong>TRANSITION:</strong> 「完成一邊後換邊，去感受兩邊的差異。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】7. 凱迪拉克床：seated push thru</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「最後我們回到凱迪拉克床。」</p><p><strong>N:</strong> 「最後的緩和是坐姿推杆。」</p><p><strong>P:</strong> 「這個動作可以溫和地伸展整條背部與大腿後側，讓脊椎在有支撐的情況下得到放鬆和延伸。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「面向推杆坐著，雙腳伸直，腳底板可以輕靠在直立桿上，雙手握住推杆。」</li><li><strong>ACTION:</strong> 「吐氣時，核心向內收，將推杆向前向上推，讓身體跟著杆子溫和地向前彎曲。吸氣，慢慢地捲回來。」</li><li><strong>DETAILS:</strong> 「這是一個伸展，不要過度用力。感受背部的張力被釋放。在最伸展的位置，停留2-3個深呼吸。」</li><li><strong>TRANSITION:</strong> 「感受脊椎一節一節地回正。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-4-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第四章：改善扁平足、膝內扣/外翻</h2>
+            <p class="text-gray-600 mb-6">本課程的目標是從足底開始，重建腳踝、膝蓋與髖關節的正確力線。我們將著重於喚醒足弓肌肉，強化臀中肌以穩定骨盆與膝蓋。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 核心床 (REFORMER)、穩定椅 (STABILITY CHAIR)、脊椎矯正器 (ARC)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 足弓建立、臀中肌強化、下肢力線校正、腳踝穩定</li></ul></div>
+            <div class="space-y-4">
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 核心床：FOOTWORK - Heel/Arch/Toes</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「這個是我們的核心床。」</p><p><strong>N:</strong> 「我們要從足部運動開始，練習腳跟、足弓、腳趾球三種踩法。」</p><p><strong>P:</strong> 「這個訓練的目的是要喚醒你足底的本體感覺，並在正確的下肢排列下，練習髖、膝、踝的聯動。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請仰躺在床上，肩膀靠著肩擋，我們先將腳跟踩在腳桿上。」</li><li><strong>ACTION:</strong> 「吐氣，腹部收緊，將床推出去。吸氣，有控制地回來。我們將依序用腳跟、足弓、腳趾球去推。」</li><li><strong>DETAILS:</strong> 「在動作中，持續監測你的膝蓋是否對準第二根腳趾頭。用足弓推的時候，想像你要把足弓提起來，而不是塌下去踩。」</li><li><strong>TRANSITION:</strong> 「每個部位我們做10-12次。去感受足底三點均勻受力。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 穩定椅：Ankle mobilization</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「接下來我們來到穩定椅。」</p><p><strong>N:</strong> 「我們要做的動作是足部運動的腳踝活動。」</p><p><strong>P:</strong> 「這個動作專門用來增加腳踝的活動度與穩定性，這對扁平足和膝蓋問題非常關鍵。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「請坐在椅子上，將一隻腳的腳趾球踩在踏板上，腳跟著地。」</li><li><strong>ACTION:</strong> 「用你的腳踝力量，慢慢地將踏板往下踩到底，然後有控制地放回來。動作要慢。」</li><li><strong>DETAILS:</strong> 「想像你的腳踝像一個靈活的絞鏈，只做上下屈伸的動作，不要有左右的翻轉。」</li><li><strong>TRANSITION:</strong> 「完成10-15次後，我們換另一隻腳。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 核心床：SIDE SPLIT - Knees bent</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們回到核心床。」</p><p><strong>N:</strong> 「我們要做的動作是側劈叉的屈膝版本。」</p><p><strong>P:</strong> 「這個動作是訓練臀中肌的王牌動作。強壯的臀中肌可以有效地穩定骨盆，從而防止膝蓋內扣。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「站在床上，一隻腳踩在固定平台，另一隻腳踩在滑床上，雙手扶著腳桿，膝蓋微彎。」</li><li><strong>ACTION:</strong> 「吐氣，用臀部外側的力量，將滑床向外推開。吸氣，啟動大腿內側的力量，有控制地將滑床拉回來。」</li><li><strong>DETAILS:</strong> 「保持你的上半身直立，核心收緊。專注在用臀部的力量去啟動動作。膝蓋要一直對準腳尖的方向。」</li><li><strong>TRANSITION:</strong> 「如果太輕鬆，可以增加彈簧重量。如果覺得困難，可以減少彈簧或動作的幅度。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 脊椎矯正器：BRIDGE - SINGLE LEG</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「現在我們換到脊椎矯正器。」</p><p><strong>N:</strong> 「我們要挑戰單腳橋式。」</p><p><strong>P:</strong> 「單腳橋式可以放大我們兩邊臀肌與核心力量的差異，並訓練在單腳支撐下維持骨盆與膝蓋穩定的能力。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「仰躺在ARC頂端，雙腳踩地。先做一個雙腳橋式將骨盆抬起穩定住。」</li><li><strong>ACTION:</strong> 「吐氣，將一隻腳穩定地抬離地面。吸氣停留，吐氣再將腳放回去。全程保持骨盆的高度與水平。」</li><li><strong>DETAILS:</strong> 「支撐腳的膝蓋是關鍵！保持它穩定，不要向內或向外倒。用臀部的力量將骨盆向上推。」</li><li><strong>TRANSITION:</strong> 「如果太困難，可以先回到雙腳橋式。進階者可以嘗試將抬起的那隻腳伸直。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】5. 核心床：FEET IN STRAPS - Circle</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們再次回到核心床。」</p><p><strong>N:</strong> 「我們要做的動作是腳踩繩帶的繞環。」</p><p><strong>P:</strong> 「這個動作可以增加髖關節的活動度與潤滑，同時在畫圈的過程中，訓練核心穩定骨盆，進而穩定膝蓋的能力。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「仰躺在床上，雙腳足弓套入繩帶，雙腿併攏伸直，垂直於天花板。」</li><li><strong>ACTION:</strong> 「吸氣，雙腿向一側打開畫半圓。吐氣，併攏後回到正上方。我們先順時針畫圈，再逆時針。」</li><li><strong>DETAILS:</strong> 「畫圈的幅度取決於你維持骨盆穩定的能力。如果骨盆開始晃動，請把圈畫小一點。」</li><li><strong>TRANSITION:</strong> 「想像你的腿是兩支筆，在天花板上畫出漂亮、圓潤的圓形。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】6. 核心床：Running in place</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「我們繼續在核心床上進行緩和。」</p><p><strong>N:</strong> 「我們要做的動作是原地跑步。」</p><p><strong>P:</strong> 「這個動作可以動態地伸展你的小腿、腳踝與大腿後側，同時練習腳踝在有阻力下的控制能力。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「躺在床上，雙腳腳趾球踩在腳桿上，將床推出去一半，一腳跟下壓，一腳跟上提。」</li><li><strong>ACTION:</strong> 「像踩腳踏車一樣，交替地將腳跟向腳桿下方踩，感覺小腿後側的伸展。」</li><li><strong>DETAILS:</strong> 「每一次下壓，都盡量將腳跟踩到最低點，感受跟腱與小腿肚的拉伸。」</li><li><strong>TRANSITION:</strong> 「我們持續進行約一分鐘，感受雙腿的放鬆。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】7. 穩定椅：Tendon stretch</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong> 「最後我們來到穩定椅做一個深層伸展。」</p><p><strong>N:</strong> 「我們要做的動作是足部運動的小腿拉伸。」</p><p><strong>P:</strong> 「這個動作可以提供一個非常深層且穩定的小腿後側肌群伸展。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「站在椅子前方，將一隻腳的腳趾球踩在踏板上，另一隻腳向後退一步。」</li><li><strong>ACTION:</strong> 「慢慢地將你的重心向前移動，讓踏板被身體的重量往下壓，直到你感覺前腳的小腿有非常明顯的伸展感。」</li><li><strong>DETAILS:</strong> 「保持呼吸。你可以試著彎曲和伸直膝蓋，去感受不同角度下，小腿不同肌肉的伸展。」</li><li><strong>TRANSITION:</strong> 「每一邊我們停留30-45秒。完成後，小心地換腳。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-5-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第五章：改善翼狀肩、肩頸僵硬</h2>
+            <p class="text-gray-600 mb-6">本課程專為改善肩胛骨穩定性設計，特別針對強化前鋸肌與下斜方肌，以穩定肩胛骨、改善翼狀問題。同時伸展放鬆長期緊繃的肩頸區域。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 凱迪拉克床 (CADILLAC), 墊上 (MAT), 梯桶 (LADDER BARREL)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 肩胛穩定、前鋸肌活化、胸椎活動度、肩頸放鬆</li></ul></div>
+            <div class="space-y-4">
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 墊上動作：貓牛式</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們在墊上開始，專注於胸椎的活動。」</p><p><strong>N:</strong>  「我們要做的第一個暖身是貓牛式 (CAT COW)。」</p><p><strong>P:</strong> 「這個動作的目的是為了溫和地打開胸椎，增加上背部的靈活性，為肩胛的穩定訓練做準備。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>ACTION:</strong> 「吸氣，胸口溫和地向前推開。吐氣，腹部收，將上背部盡量向天花板拱起。」</li><li><strong>DETAILS:</strong> 「在拱背（貓式）時，特別專注在用手掌推地的力量，去感受上背部撐開的感覺，這能初步喚醒你的前鋸肌。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 凱迪拉克床：SUPINE SCAPULA ISOLATION</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「現在我們來到凱迪拉克床。」</p><p><strong>N:</strong>  「我們要做的動作是仰臥肩胛骨孤立訓練 (SUPINE SCAPULA ISOLATION)。」</p><p><strong>P:</strong> 「這個動作是啟動與控制肩胛骨的關鍵訓練，能直接幫助你建立肩胛骨前伸與後縮的本體感覺。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「仰躺在床上，雙手抓住上方的彈簧手把，手臂伸直指向天花板。」</li><li><strong>ACTION:</strong> 「吐氣，感覺上背部撐開，將肩胛骨前推。吸氣，有控制地讓肩胛骨回到床上，甚至微微向中間夾攏。」</li><li><strong>DETAILS:</strong> 「注意，整個過程手肘都是伸直的，動作完全來自於肩胛骨的滑動。保持頸部放鬆。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 凱迪拉克床：lat press</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們繼續使用凱迪拉克床。」</p><p><strong>N:</strong>  「我們要做的動作是坐姿推杆的背闊肌下壓 (lat press)。」</p><p><strong>P:</strong> 「這個動作可以強化你的背闊肌與前鋸肌，這兩者都是穩定肩胛骨的重要肌群。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「盤腿或跪姿，背對推杆坐著，雙手寬握推杆。」</li><li><strong>ACTION:</strong> 「吐氣時，啟動背部的力量將推杆向下壓到大腿前側。吸氣，有控制地對抗彈簧，讓推杆慢慢回到起始位置。」</li><li><strong>DETAILS:</strong> 「全程保持肩膀遠離耳朵，核心收緊。想像你是用腋窩下方的肌肉在發力。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 墊上動作：棒式</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>   「現在我們回到墊上。」</p><p><strong>N:</strong>   「我們要做的動作是棒式 (PLANK)。」</p><p><strong>P:</strong> 「棒式是訓練前鋸肌在閉鎖鏈下穩定肩胛骨的絕佳動作，對於改善翼狀肩非常有效。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「來到高棒式或手肘支撐的姿勢，身體從頭到腳跟成一直線。」</li><li><strong>ACTION:</strong> 「保持這個姿勢，進行深長的呼吸。專注在將胸口與上背部遠離地面。」</li><li><strong>DETAILS:</strong> 「關鍵：想像用你的手或手肘用力推地板，感覺上背部微微拱起，肩胛骨平貼在胸廓上。這就是前鋸肌在用力！」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】5. 梯桶：PLANK/ T POSITION</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>   「現在我們來到梯桶。」</p><p><strong>N:</strong>   「我們要做的動作是棒式/T姿位 (PLANK/ T POSITION)。」</p><p><strong>P:</strong> 「T姿位（側棒式）可以訓練單邊肩胛的穩定性與核心側鏈的力量，進一步挑戰你的肩關節穩定能力。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「單手或單前臂支撐在桶子上，身體轉向側面，雙腳踩在梯子上。」</li><li><strong>ACTION:</strong> 「保持這個姿勢，將上方的手臂伸向天花板。專注在用下方的肩膀與核心將身體撐起。」</li><li><strong>DETAILS:</strong> 「感覺支撐側的肩胛骨穩穩地貼住背部，核心收緊將臀部抬高，避免身體掉下來。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】6. 梯桶：ROUND BACK/STRAIGHT BACK</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們繼續使用梯桶進行伸展。」</p><p><strong>N:</strong>   「我們要做的動作是圓背/平背 (ROUND BACK/STRAIGHT BACK)。」</p><p><strong>P:</strong> 「這個動作可以在有支撐的情況下，溫和地伸展與活動我們的胸椎與下背部，釋放一整節課的疲勞。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「坐在桶子前方，雙腳踩在橫杆上，雙手握住上方的橫杆，背部靠著桶子。」</li><li><strong>ACTION:</strong> 「吸氣，將脊椎拉長來到平背。吐氣，腹部內收，讓身體順著桶子的弧度向後躺，形成一個C字形的圓背。」</li><li><strong>DETAILS:</strong> 「這是一個放鬆的動作，讓桶子支撐你身體的重量，專注在呼吸。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】7. 凱迪拉克床：SHOULDER SHRUGS AND THORACIC EXTENSION</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>   「最後我們回到凱迪拉克床做肩頸放鬆。」</p><p><strong>N:</strong>  「我們要做的動作是肩胛骨上升和胸伸展 (SHOULDER SHRUGS AND THORACIC EXTESON)。」</p><p><strong>P:</strong> 「這個動作可以幫助我們伸展緊繃的胸椎，同時有意識地控制與放鬆因緊張而聳起的上斜方肌。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「仰躺在床上，頭部位於床的邊緣，雙手抓住床邊的直立桿。」</li><li><strong>ACTION:</strong> 「吸氣，讓胸口和肩膀溫和地向地板方向下沉。然後，有意識地做幾次聳肩再放鬆的動作。」</li><li><strong>DETAILS:</strong> 「在做胸伸展時，保持下背部的穩定。聳肩時吸氣，吐氣時要完全地放鬆，感覺肩膀融化開來。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-6-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第六章：改善肋骨外翻、骨盆後傾</h2>
+            <p class="text-gray-600 mb-6">本課程專注於重建核心的內在支撐，強化臀肌與大腿後側，並伸展緊繃的腹直肌與髖屈肌，以調整骨盆後傾的姿態。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 核心床 (REFORMER), 脊椎矯正器 (ARC), 穩定椅 (STABILITY CHAIR)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 呼吸訓練、核心深層連結、臀肌強化、脊椎延伸</li></ul></div>
+            <div class="space-y-4">
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 核心床：BRIDGING</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們從核心床開始。」</p><p><strong>N:</strong>  「我們要做的動作是橋式 (BRIDGING)。」</p><p><strong>P:</strong> 「這個動作可以喚醒沉睡的臀肌與大腿後側，對於調整骨盆後傾非常重要，同時我們將在動作中練習呼吸與核心的連結。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>ACTION:</strong> 「吐氣，感覺腹部收緊，肋骨下沉，然後用臀部的力量將脊椎一節一節地捲起。」</li><li><strong>DETAILS:</strong> 「關鍵：在吐氣時，先感覺肋骨輕輕地向骨盆方向滑動，再啟動橋式。這可以幫助你連結核心，避免肋骨外翻。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 脊椎矯正器：圓背/平背</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「現在我們換到脊椎矯正器。」</p><p><strong>N:</strong>  「我們要做的動作是圓背/平背 (ROUND BACK/FLAT BACK)。」</p><p><strong>P:</strong> 「這個動作可以增加你對骨盆與脊椎的覺察，學會在坐姿下如何找到中立位，並活動僵硬的下背部。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>ACTION:</strong> 「吸氣，將脊椎向上拉長，來到一個挺拔的平背。吐氣，從骨盆開始向後滾動，腹部內收，來到一個C字形的圓背。」</li><li><strong>DETAILS:</strong> 「對於骨盆後傾的你，要特別專注在吸氣來到“平背”的感覺，試著將坐骨穩穩地向下扎根。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 核心床：SHORT BOX ABDOMINALS - Flat back</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們回到核心床，並放上短箱。」</p><p><strong>N:</strong>  「我們要做的動作是短箱腹部訓練的平背版本 (SHORT BOX ABDOMINALS - Flat back)。」</p><p><strong>P:</strong> 「這個動作在挑戰核心的同時，能非常有效地訓練你在維持脊椎延伸下的核心控制能力，幫助改善骨盆後傾的習慣性駝背。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「坐在短箱上，雙腳勾住腳繩，脊椎向上拉長。」</li><li><strong>ACTION:</strong> 「吐氣時，保持背部完全平坦，身體從髖關節啟動，直直地向後傾斜。吸氣，再回到坐姿。」</li><li><strong>DETAILS:</strong> 「全程都要保持肋骨內收，腹部用力。想像你的身體是一根不會彎的鋼板。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 穩定椅：STEP UP</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「現在我們來到穩定椅。」</p><p><strong>N:</strong>  「我們要做的動作是上階動作 (STEP UP)。」</p><p><strong>P:</strong> 「這是一個功能性的動作，能有效訓練單邊的臀肌、股四頭肌與核心穩定，對於建立支撐骨盆的力量非常重要。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「站在椅子前方，一隻腳的整個腳掌踩在椅子座位上。」</li><li><strong>ACTION:</strong> 「吐氣，用踩在椅子上那條腿的臀部和腿部力量，將身體向上推。吸氣，有控制地，慢慢將另一隻腳放回地面。」</li><li><strong>DETAILS:</strong> 「上半身保持直立，核心收緊。專注在用上方腿的力量，而不是用下方腿去蹬地。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】5. 核心床：LONG STRETCH - Flat back</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們再次回到核心床。」</p><p><strong>N:</strong>  「我們要做的動作是長拉伸的平背版本 (LONG STRETCH - Flat back)。」</p><p><strong>P:</strong> 「這個動作在一個全身整合的姿勢下，極度挑戰你的核心穩定能力與呼吸控制，對於改善肋骨外翻非常有幫助。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「手握腳桿，腳踩在肩擋前的床板上，來到一個類平板支撐的姿勢。」</li><li><strong>ACTION:</strong> 「吸氣，從肩膀啟動，將床向後推。吐氣，用核心的力量，特別是腹部，將床有控制地拉回來。」</li><li><strong>DETAILS:</strong> 「關鍵：在吐氣拉回床的時候，想像你的肋骨正在向內、向下收，去找骨盆。這個意識可以非常有效地訓練控制肋骨的能力。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】6. 脊椎矯正器：SWAN DIVE</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們來到脊椎矯正器進行伸展。」</p><p><strong>N:</strong>  「我們要做的動作是天鵝潛水 (SWAN DIVE)。」</p><p><strong>P:</strong> 「這個動作可以溫和地伸展因骨盆後傾而長期處於縮短狀態的腹肌與髖屈肌，同時活動胸椎。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「趴在ARC上，骨盆位於頂點，雙手可以放在地上或ARC兩側。」</li><li><strong>ACTION:</strong> 「吸氣，用背部的力量將上半身微微抬起，感覺腹部前側的伸展。吐氣，慢慢放鬆下來。」</li><li><strong>DETAILS:</strong> 「臀部要保持用力，以保護你的下背部。專注在胸口的擴張與腹部的伸展感。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】7. 核心床：MERMAID</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「最後我們在核心床上做緩和。」</p><p><strong>N:</strong>  「我們要做的伸展是美人魚 (MERMAID)。」</p><p><strong>P:</strong> 「美人魚可以伸展身體的側線，幫助釋放核心周圍的張力，讓呼吸更順暢。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>ACTION:</strong> 「吐氣時，將床推出去，身體向腳桿方向側彎。吸氣，將氣息送到伸展側的肋骨。」</li><li><strong>DETAILS:</strong> 「在側彎時，注意對側的肋骨保持內收，不要凸出來。這是在伸展中練習核心控制的好機會。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-7-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第七章：緩解膝蓋疼痛、改善髖關節活動不佳</h2>
+            <p class="text-gray-600 mb-6">本課程旨在通過改善髖關節的活動度與穩定性，來減輕膝蓋的壓力。專注於啟動臀部肌群、放鬆髖部周圍的深層肌肉。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 凱迪拉克床 (CADILLAC), 梯桶 (LADDER BARREL), 核心床 (REFORMER)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 髖關節活動度、臀肌啟動、下肢穩定性、本體感覺訓練</li></ul></div>
+            <div class="space-y-4">
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 凱迪拉克床：FOOTWORK</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們在凱迪拉克床上開始，這個設備可以提供很好的支撐。」</p><p><strong>N:</strong>  「我們要做的暖身是腳部運動 (FOOTWORK)。」</p><p><strong>P:</strong> 「這個動作可以在無重力的躺姿下，安全地活動你的髖、膝、踝關節，並喚醒下肢的肌肉連結。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「仰躺在床上，雙腳的腳趾球踩在推杆上，膝蓋彎曲。」</li><li><strong>ACTION:</strong> 「吐氣，用腿部的力量將推杆向上推到底。吸氣，有控制地對抗彈簧回來。可依序練習腳跟和V-feet踩法。」</li><li><strong>DETAILS:</strong> 「全程注意保持膝蓋對準腳尖方向。如果膝蓋在彎曲時會疼痛，請在不痛的範圍內活動即可。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 凱迪拉克床：LEG SPRINGS SUPINE - circle</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們繼續使用凱迪拉克床。」</p><p><strong>N:</strong>  「下一個動作是仰臥下肢彈簧訓練的繞環 (LEG SPRINGS SUPINE - circle)。」</p><p><strong>P:</strong> 「這個動作是“潤滑”髖關節的絕佳動作，可以非常溫和且有效地增加髖關節的活動範圍。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「繼續仰躺，將雙腳套入下方的彈簧繩帶中，雙腿伸直指向天花板。」</li><li><strong>ACTION:</strong> 「吸氣，雙腿一起向一側畫半圓。吐氣，從另一側繞回來。先順時針畫幾個圈，再逆時針。」</li><li><strong>DETAILS:</strong> 「關鍵：骨盆要像黏在床上一樣，完全不能晃動。畫圈的範圍由你骨盆的穩定能力決定。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 核心床：SIDE SPLIT - Knees straight</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「現在我們換到核心床。」</p><p><strong>N:</strong>  「我們要做的動作是側劈叉的直膝版本 (SIDE SPLIT - Knees straight)。」</p><p><strong>P:</strong> 「這個動作能非常有效地強化穩定膝蓋的關鍵肌群——臀中肌，同時挑戰你的平衡與控制能力。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「站在床上，一腳踩在固定平台，另一腳踩在滑床上，雙手輕扶腳桿。」</li><li><strong>ACTION:</strong> 「吐氣，用臀部外側的力量，將滑床向外推開。吸氣，用大腿內側的力量，有控制地將滑床拉回來。」</li><li><strong>DETAILS:</strong> 「保持膝蓋和腳尖都朝向正前方。如果膝蓋會痛，可以回到屈膝的版本操作。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 核心床：FEET IN STRAPS - Scissors</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們繼續在核心床上。」</p><p><strong>N:</strong>  「我們要做的動作是腳踩繩帶的剪刀腳 (FEET IN STRAPS - Scissors)。」</p><p><strong>P:</strong> 「這個動作可以在有輔助的情況下，動態地伸展你的大腿後側肌群，增加髖關節前後向的活動度。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「仰躺在床上，雙腳套入繩帶，雙腿伸直併攏，垂直於天花板。」</li><li><strong>ACTION:</strong> 「吸氣，一條腿朝你的方向，另一條腿遠離你，像剪刀一樣打開。吐氣，兩條腿在中間交會，換邊進行。」</li><li><strong>DETAILS:</strong> 「保持雙腿盡量伸直，但如果後側太緊，可以微微彎曲。骨盆保持穩定。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】5. 梯桶：SIDE BENDING</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「現在我們來到梯桶。」</p><p><strong>N:</strong>  「我們要做的動作是側彎 (SIDE BENDING)。」</p><p><strong>P:</strong> 「伸展與髖關節相連的側腰與大腿外側筋膜，對改善髖活動度同樣重要。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「側身靠在桶子上，下方的腳踩在梯子上，上方的腳可以放在前方的梯子上。」</li><li><strong>ACTION:</strong> 「吐氣，順著桶子的弧度，讓身體向側方彎曲，感覺從指尖到腳踝的整條側線都被拉長。」</li><li><strong>DETAILS:</strong> 「臀部要保持向前，身體不要扭轉。將呼吸送到你正在伸展的側邊肋骨。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】6. 核心床：LUNGES</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們回到核心床進行伸展。」</p><p><strong>N:</strong>  「我們要做的伸展是弓步 (LUNGES)。」</p><p><strong>P:</strong> 「這個動作可以非常有效地伸展緊繃的髖屈肌，釋放髖關節前側的壓力，對改善髖活動度和緩解膝蓋痛都有幫助。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「站在床的旁邊，一隻腳踩地，另一隻腳的腳背或小腿放在滑床上，雙手可扶著腳桿。」</li><li><strong>ACTION:</strong> 「吐氣，慢慢將滑床向後推，直到感覺後方腿的大腿前側有明顯伸展感。在這個位置停留呼吸。」</li><li><strong>DETAILS:</strong> 「保持上半身直立，核心收緊，可以稍微做一點骨盆後傾來加深伸展感。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】7. 凱迪拉克床：ROLLING STOMACH MASSAGE</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「最後我們在凱迪拉克床上做一個緩和動作。」</p><p><strong>N:</strong>  「我們要做的動作是滾動式腹部按摩 (ROLLING STOMACH MASSAGE)。」</p><p><strong>P:</strong> 「這個動作看似在按摩腹部，實則是一個極佳的脊椎與髖關節屈曲伸展動作，可以溫和地結束今天的訓練。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「坐在床上，背對推杆，雙腳腳掌踩在推杆上，雙手輕扶推杆兩側。」</li><li><strong>ACTION:</strong> 「吐氣，腹部內收，將背部向後捲動，同時用腳的力量將推杆推出去。吸氣，再慢慢地捲回來。」</li><li><strong>DETAILS:</strong> 「這是一個滾動的動作，讓你的脊椎像一顆球一樣。感受下背部與髖關節的放鬆。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-8-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第八章：懷孕初期 (1-13週)</h2>
+            <p class="text-gray-600 mb-6">此階段目標是建立核心與骨盆底肌的正確連結，適應身體變化，並維持溫和的運動習慣。安全第一。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 核心床 (REFORMER), 墊上 (MAT), 穩定椅 (STABILITY CHAIR)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 核心連結、骨盆穩定、呼吸練習、全身溫和活動</li></ul></div>
+            <div class="space-y-4">
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 墊上動作：貓牛式</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「溫和活動脊椎，建立腹部與骨盆底肌的初步連結，並緩解孕早期可能出現的腰痠。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「動作輕柔，更強調吐氣時腹部“擁抱”寶寶的感覺。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 核心床：FOOTWORK</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「在舒服的躺姿下，促進下肢血液循環，預防水腫，並維持腿部力量。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「彈簧選擇輕量，避免腹部壓力過大。可以全程使用腳跟或足弓踩，增加穩定性。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 核心床：Hug a tree</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「強化背部與肩胛穩定肌群，幫助支撐逐漸變大的胸部，預防圓肩駝背。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「採高跪姿或坐姿，保持脊椎直立，專注在用背部的力量去開合手臂。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 穩定椅：leg press</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「訓練單邊臀腿力量與穩定性，這對支撐增加的體重非常重要。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「彈簧調輕，扶著椅子握把增加穩定性，專注於動作的控制，而非重量。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】5. 核心床：Leg lowers</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「在有支撐的情況下，訓練核心穩定骨盆的能力，同時溫和活動髖關節。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「雙腿下降的幅度不需太大，以骨盆和下背部能完全保持穩定為原則。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】6. 核心床：MERMAID</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「伸展身體側線，為寶寶創造更多空間，緩解腰背的緊繃感。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「動作溫和，更注重呼吸與伸展的舒適度。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-9-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第九章：懷孕中期 (14-27週)</h2>
+            <p class="text-gray-600 mb-6">此階段身體相對穩定，是強化背、臀、腿力量的黃金時期。避免長時間仰臥。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 凱迪拉克床 (CADILLAC), 梯桶 (LADDER BARREL), 穩定椅 (STABILITY CHAIR)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 背部肌力、臀部強化、骨盆穩定、維持活動力</li></ul></div>
+            <div class="space-y-4">
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 梯桶：ROUND BACK/STRAIGHT BACK</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「在有支撐的坐姿下，安全地活動脊椎，增加骨盆的覺察。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「坐在桶子前，腳踩梯子，雙手扶梯子，進行溫和的圓背與平背練習。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】2. 凱迪拉克床：LEG SPRINGS SIDELYING - ABD/ADD</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「側躺姿勢非常適合孕中期，能有效強化臀中肌與大腿內外側，穩定骨盆。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「側躺在床上，頭下可墊枕頭，在舒適的範圍內進行腿部的外展與內收。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 穩定椅：STEP UP</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「模擬日常生活的上下樓梯，是安全有效的功能性臀腿訓練。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「保持身體直立，可用手輕扶牆壁或握把輔助平衡。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 梯桶：PLANK/ T POSITION (Modified)</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「這是孕期絕佳的核心訓練，能強化腹斜肌以支撐孕肚，且完全避免腹直肌分離的風險。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「採側跪姿，一手扶在桶頂，另一手向上延伸，專注在用側腰的力量將身體撐起。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】5. 梯桶：SIDE BENDING</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「利用桶子的弧度，深層伸展體側與髖部，釋放壓力。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「側身靠在桶上，動作溫和，配合深呼吸。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-10-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第十章：懷孕後期 (28週後)</h2>
+            <p class="text-gray-600 mb-6">此階段重點轉為維持活動力、釋放身體的緊繃與不適、練習放鬆與呼吸，為生產做準備。動作務必溫和、舒適。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 核心床 (REFORMER), 梯桶 (LADDER BARREL), 墊上 (MAT)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 髖部活動度、骨盆底肌放鬆、呼吸練習、釋放緊繃</li></ul></div>
+            <div class="space-y-4">
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 墊上動作：貓牛式 + 繞圈</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「溫和活動脊椎，可加上左右繞圈，增加骨盆的活動度，幫助寶寶找到最佳胎位。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「動作更慢更溫和，可以想像用骨盆畫圓。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 核心床：FOOTWORK - V-feet (半躺姿)</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「促進循環，預防水腫，並溫和地活動髖關節。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「床的靠背需墊高，呈半躺姿。彈簧非常輕，專注在腳踝幫浦與髖關節的開合。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【活動】3. 梯桶：TWIST</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「在有支撐的情況下，進行溫和的胸椎轉體，釋放背部的僵硬感。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「坐在桶子前側，轉動幅度不需大，以胸椎的活動為主，避免擠壓腹部。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【活動】4. 墊上動作：橋式 (Modified)</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「維持臀部與大腿後側的力量，幫助穩定骨盆。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「仰臥時背後需墊高。抬起的高度不用太高，專注在臀部和大腿後側的感覺，並練習在動作中放鬆骨盆底肌。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展/放鬆】5. 梯桶：SIDE BENDING</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「深層伸展側腰，緩解孕後期常見的身體緊繃。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「溫和地進行，可在伸展側停留更長的時間，配合深呼吸。」</li></ul></div></div>
+                 <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展/放鬆】6. 呼吸練習</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>P:</strong> 「練習腹式呼吸與骨盆底肌的放鬆，為生產做準備。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「採舒適的坐姿或側躺，引導學員吸氣時感受腹部與骨盆底肌的擴張，吐氣時溫和地回復。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="chapter-11-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-2">第十一章：無任何症狀者</h2>
+            <p class="text-gray-600 mb-6">本課程為一堂全身性的綜合訓練，旨在挑戰並提升學員的肌力、柔軟度、協調性與核心控制能力。課程節奏流暢，感受身心合一的暢快。</p>
+            <div class="p-4 bg-[#F1F3EF] rounded-lg mb-6"><h3 class="font-bold text-lg text-[#8D9B87]">課程資訊</h3><ul class="list-disc list-inside mt-2 text-gray-700"><li><strong>使用器材：</strong> 核心床 (REFORMER), 穩定椅 (STABILITY CHAIR), 脊椎矯正器 (ARC)</li><li><strong>課程時間：</strong> 約 60 分鐘</li><li><strong>訓練重點：</strong> 全身整合、核心挑戰、動態流暢、控制與精準</li></ul></div>
+            <div class="space-y-4">
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】1. 核心床：FOOTWORK SERIES</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們在核心床上開始，喚醒身體的連結。」</p><p><strong>N:</strong> 「我們要完成整個足部運動系列，包括 Heel/Arch/Toes, V-feet, Tendon stretch, Running in place。」</p><p><strong>P:</strong> 「完整地喚醒下肢，建立核心與脊椎的穩定連結，並為接下來的挑戰做準備。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「動作之間流暢轉換，專注在呼吸與動作的配合，感受身體逐漸暖開。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【暖身】2. 核心床：HUNDRED</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們繼續在核心床上。」</p><p><strong>N:</strong>  「接下來是經典的百式 (HUNDRED)。」</p><p><strong>P:</strong> 「快速提升核心溫度，強化腹部耐力，建立全身的血液循環。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>TRANSITION:</strong> 「從屈膝開始，穩定後可挑戰直膝。專注在呼吸的節奏與核心的深度參與。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】3. 核心床：LONG STRETCH - Round back</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們繼續在核心床上。」</p><p><strong>N:</strong>  「我們要做的動作是長拉伸的圓背版本 (LONG STRETCH - Round back)。」</p><p><strong>P:</strong> 「這是一個全身性的整合動作，極度挑戰你的核心力量、肩胛穩定性與身體控制能力。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「手握腳桿，腳踩頭靠，身體呈圓背的棒式。」</li><li><strong>ACTION:</strong> 「吸氣後推，吐氣時用腹部的力量將床拉回，肩胛骨保持撐開。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】4. 穩定椅：CAT PRESS STANDING</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「現在我們來到穩定椅。」</p><p><strong>N:</strong>  「我們要做的動作是站姿貓式捲腹 (CAT PRESS STANDING)。」</p><p><strong>P:</strong> 「這個動作挑戰你在站姿下的腹部力量、脊椎分節活動能力與平衡感。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「站在椅子後方，雙手壓在踏板上。」</li><li><strong>ACTION:</strong> 「吐氣，腹部收緊，將背部拱起（貓式），同時用手的力量將踏板上提。吸氣，有控制地放回。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】5. 核心床：SIDE SPLIT - Single leg</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們回到核心床。」</p><p><strong>N:</strong>  「我們要挑戰的是側劈叉的單腳版本 (SIDE SPLIT - Single leg)。」</p><p><strong>P:</strong> 「這是一個高階挑戰，考驗你的單邊臀部力量、平衡感以及核心的極致穩定。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>ACTION:</strong> 「一腳踩在固定平台，另一腳踩在滑床上向外推，同時將另一條腿抬起，挑戰單腳平衡。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【主訓練】6. 穩定椅：SWAN DIVE</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"<p><strong>E:</strong>  「我們再次來到穩定椅。」</p><p><strong>N:</strong>  「我們要做的動作是天鵝潛水 (SWAN DIVE)。」</p><p><strong>P:</strong> 「這個動作可以強化整個背部的力量，包括豎脊肌、臀肌與大腿後側，同時伸展身體前側。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「趴在椅子上，骨盆位於邊緣，雙手握住踏板。」</li><li><strong>ACTION:</strong> 「吐氣，用背部的力量將上半身與腿同時抬起，將踏板下壓。吸氣，有控制地回來。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】7. 脊椎矯正器：SWIM</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「我們來到脊椎矯正器進行緩和。」</p><p><strong>N:</strong>  「我們要做的動作是游泳 (SWIM)。」</p><p><strong>P:</strong> 「在溫和伸展身體前側的同時，動態地活動四肢，協調並放鬆全身。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>SET UP:</strong> 「趴在ARC上，骨盆在頂點。」</li><li><strong>ACTION:</strong> 「將對側的手腳輕輕抬離地面，然後流暢地交替，像在水中游泳一樣。」</li></ul></div></div>
+                <div class="accordion"><div class="accordion-header bg-white rounded-lg p-4 shadow-sm flex justify-between items-center"><h4 class="font-semibold text-lg">【伸展】8. 核心床：MERMAID</h4><span class="transform transition-transform duration-300">▼</span></div><div class="accordion-content bg-white rounded-b-lg"><p><strong>E:</strong>  「最後我們回到核心床，做一個優雅的結束。」</p><p><strong>N:</strong>  「最後的伸展是美人魚 (MERMAID)。」</p><p><strong>P:</strong> 「伸展身體側線，釋放訓練的疲勞，讓身體回到平衡與寧靜的狀態。」</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>DETAILS:</strong> 「側坐在床上，進行流暢的側彎伸展，可以加上胸椎的旋轉，進一步釋放背部壓力。」</li></ul></div></div>
+            </div>
+        </div>
+    </template>
+    
+    <template id="glossary-template">
+        <div class="fade-in">
+            <h2 class="text-2xl font-bold text-[#5C6B57] mb-6 text-center">學員常見症狀深度解析</h2>
+            <div class="space-y-8">
+                <div>
+                    <h3 class="text-xl font-bold text-[#8D9B87] border-b-2 border-[#D8E0D3] pb-2 mb-4">上肢、肩頸與胸椎姿態問題</h3>
+                    <div class="space-y-4">
+                        <div><h4 class="font-semibold text-lg">圓肩 (Rounded Shoulders)</h4><p class="text-gray-700"><strong>定義：</strong>肩膀關節向前、向內旋轉。<br><strong>成因：</strong>主要是肌肉失衡。胸肌過於緊繃，將肩膀「拉」向前方；而上背部的肌群相對無力，無法將其「拉」回。長時間打電腦、滑手機是主因。</p></div>
+                        <div><h4 class="font-semibold text-lg">駝背 (Kyphosis)</h4><p class="text-gray-700"><strong>定義：</strong>胸椎向後的生理弧度過大，上背部過度隆起。<br><strong>成因：</strong>常被視為圓肩的「進階版」。當肩膀長期前旋，胸椎會代償性地增加後凸弧度。核心與背部伸展肌群無力是根本原因。</p></div>
+                        <div><h4 class="font-semibold text-lg">烏龜頸 (Forward Head Posture)</h4><p class="text-gray-700"><strong>定義：</strong>頭部相對於肩膀的位置過度前移。<br><strong>成因：</strong>駝背的直接連鎖反應。為了維持視線水平，頭部必須向前代償。這會讓後頸肌肉極度緊繃，而頸部深層的穩定肌群則變得無力。</p></div>
+                        <div><h4 class="font-semibold text-lg">翼狀肩 (Winging Scapula)</h4><p class="text-gray-700"><strong>定義：</strong>手臂動作時，肩胛骨內側會從背後突出。<br><strong>成因：</strong>最主要原因是「前鋸肌」無力。這條肌肉負責將肩胛骨穩定地貼合在胸廓上，當它失能時，肩胛骨就會失去穩定性，容易導致肩膀夾擠。</p></div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-xl font-bold text-[#8D9B87] border-b-2 border-[#D8E0D3] pb-2 mb-4">核心、骨盆與脊椎姿態問題</h3>
+                     <div class="space-y-4">
+                        <div><h4 class="font-semibold text-lg">骨盆前傾 (Anterior Pelvic Tilt)</h4><p class="text-gray-700"><strong>定義：</strong>骨盆向前下方傾斜，導致腰椎弧度過大、小腹凸出。<br><strong>成因：</strong>久坐是最大元兇，導致髖屈肌過於緊繃，將骨盆從前方往下拉。同時，腹部與臀部肌群無力。這是長期腰痠的主因。</p></div>
+                        <div><h4 class="font-semibold text-lg">骨盆後傾 (Posterior Pelvic Tilt)</h4><p class="text-gray-700"><strong>定義：</strong>骨盆向後上方傾斜，導致腰椎曲線變得過於平坦。<br><strong>成因：</strong>通常與不當的站姿習慣及大腿後側肌群過度緊繃有關。平坦的腰椎會失去避震功能，增加椎間盤受壓的風險。</p></div>
+                        <div><h4 class="font-semibold text-lg">脊椎側彎 (Scoliosis)</h4><p class="text-gray-700"><strong>定義：</strong>脊椎出現側向的「C」型或「S」型彎曲。<br><strong>成因：</strong>多數是後天因長期姿勢不良導致的「功能性」側彎。側彎會導致凹側肌肉緊繃、凸側肌肉無力，形成惡性循環。</p></div>
+                         <div><h4 class="font-semibold text-lg">肋骨外翻 (Rib Flare)</h4><p class="text-gray-700"><strong>定義：</strong>軀幹下緣的肋骨，在自然呼吸狀態下明顯向前或向兩側翹起。<br><strong>成因：</strong>核心失能與錯誤呼吸。理想的呼吸由橫膈膜主導，吐氣時，深層核心(腹橫肌)會將肋骨溫和地向內、向下帶。當核心無力或習慣胸式呼吸時，肋骨就失去了「錨定」而外翻。</p></div>
+                    </div>
+                </div>
+                 <div>
+                    <h3 class="text-xl font-bold text-[#8D9B87] border-b-2 border-[#D8E0D3] pb-2 mb-4">下肢、髖膝踝問題</h3>
+                    <div class="space-y-4">
+                        <div><h4 class="font-semibold text-lg">扁平足 (Flat Feet)</h4><p class="text-gray-700"><strong>定義：</strong>足底的內側足弓塌陷。<br><strong>成因：</strong>主要是支撐足弓的相關肌肉無力所致。足弓是人體的天然避震器，塌陷會引發連鎖反應，影響整個下肢的力線。</p></div>
+                        <div><h4 class="font-semibold text-lg">膝內扣 (Knee Valgus)</h4><p class="text-gray-700"><strong>定義：</strong>站立或下蹲時，膝蓋會不自主地向內夾。<br><strong>成因：</strong>通常是扁平足和臀中肌無力的共同結果。塌陷的足弓會帶動小腿內旋，而無力的臀中肌無法從髖部穩定大腿骨，最終導致膝蓋向內崩塌。</p></div>
+                        <div><h4 class="font-semibold text-lg">髖關節活動不佳 & 膝蓋疼痛</h4><p class="text-gray-700"><strong>定義：</strong>髖關節活動範圍受限，或膝蓋在活動時感到疼痛。<br><strong>成因：</strong>膝蓋是「受害者」。人體關節中，髖部需要靈活，而膝蓋需要穩定。當靈活的髖關節因久坐而僵硬時，身體為了完成動作，就會強迫穩定的膝蓋去產生額外的扭轉來代償，最終導致疼痛。</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const categories = [
+                { id: 'chapter-1', name: '圓肩駝背', icon: '🧘‍♀️' },
+                { id: 'chapter-2', name: '骨盆前傾/腰痠', icon: '🤸‍♂️' },
+                { id: 'chapter-3', name: '脊椎側彎/高低肩', icon: '🚶‍♀️' },
+                { id: 'chapter-4', name: '扁平足/膝蓋問題', icon: '🦵' },
+                { id: 'chapter-5', name: '翼狀肩/肩頸僵硬', icon: '🙆‍♀️' },
+                { id: 'chapter-6', name: '肋骨外翻/骨盆後傾', icon: '🌬️' },
+                { id: 'chapter-7', name: '髖/膝活動不佳', icon: '🦾' },
+                { id: 'chapter-8', name: '孕婦初期', icon: '🤰' },
+                { id: 'chapter-9', name: '孕婦中期', icon: '🤱' },
+                { id: 'chapter-10', name: '孕婦後期', icon: '👶' },
+                { id: 'chapter-11', name: '無症狀者', icon: '💪' },
+                { id: 'glossary', name: '症狀百科', icon: '📖' },
+            ];
+
+            const navigation = document.getElementById('symptom-navigation');
+            const contentDisplay = document.getElementById('content-display');
+            let activeChart = null;
+            
+            function init() {
+                categories.forEach(cat => {
+                    const button = document.createElement('button');
+                    button.className = 'nav-button bg-white p-3 rounded-lg shadow-sm text-center text-gray-700 font-semibold';
+                    button.dataset.target = cat.id;
+                    button.innerHTML = `<div class="text-2xl mb-1">${cat.icon}</div><div class="text-sm">${cat.name}</div>`;
+                    button.addEventListener('click', (e) => {
+                        handleNavClick(e.currentTarget);
+                    });
+                    navigation.appendChild(button);
+                });
+
+                loadWelcomeScreen();
+            }
+            
+            function handleNavClick(buttonElement) {
+                document.querySelectorAll('.nav-button').forEach(btn => btn.classList.remove('active-nav-button'));
+                buttonElement.classList.add('active-nav-button');
+                loadContent(buttonElement.dataset.target);
+            }
+
+            function loadContent(targetId) {
+                if (activeChart) {
+                    activeChart.destroy();
+                    activeChart = null;
+                }
+                const template = document.getElementById(`${targetId}-template`);
+                if (template) {
+                    contentDisplay.innerHTML = template.innerHTML;
+                    if (targetId.startsWith('chapter')) {
+                        setupAccordions();
+                    }
+                }
+            }
+            
+            function loadWelcomeScreen() {
+                 const template = document.getElementById('welcome-screen-template');
+                 contentDisplay.innerHTML = template.innerHTML;
+                 renderOverviewChart();
+            }
+
+            function setupAccordions() {
+                const accordions = contentDisplay.querySelectorAll('.accordion');
+                accordions.forEach(accordion => {
+                    const header = accordion.querySelector('.accordion-header');
+                    const content = accordion.querySelector('.accordion-content');
+                    const icon = header.querySelector('span');
+
+                    header.addEventListener('click', () => {
+                        const isOpen = content.classList.contains('open');
+                        
+                        document.querySelectorAll('.accordion-content.open').forEach(openContent => {
+                            if (openContent !== content) {
+                                openContent.classList.remove('open');
+                                const otherIcon = openContent.previousElementSibling.querySelector('span');
+                                if(otherIcon) otherIcon.style.transform = 'rotate(0deg)';
+                            }
+                        });
+
+                        if (!isOpen) {
+                           content.classList.add('open');
+                           if(icon) icon.style.transform = 'rotate(180deg)';
+                        } else {
+                           content.classList.remove('open');
+                           if(icon) icon.style.transform = 'rotate(0deg)';
+                        }
+                    });
+                });
+            }
+
+            function renderOverviewChart() {
+                const canvas = document.getElementById('overviewChart');
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                const workoutCategories = categories.filter(c => c.id.startsWith('chapter'));
+                
+                if (activeChart) {
+                    activeChart.destroy();
+                }
+                const exerciseCounts = {
+                    "chapter-1": 7, "chapter-2": 7, "chapter-3": 7, "chapter-4": 7, "chapter-5": 7, "chapter-6": 7, "chapter-7": 7,
+                    "chapter-8": 6, "chapter-9": 5, "chapter-10": 6, "chapter-11": 7
+                };
+
+                activeChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: workoutCategories.map(s => s.name),
+                        datasets: [{
+                            label: '總動作數',
+                            data: workoutCategories.map(cat => exerciseCounts[cat.id] || 0),
+                            backgroundColor: '#8D9B87',
+                            borderColor: '#5C6B57',
+                            borderWidth: 1,
+                            borderRadius: 5,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: { y: { beginAtZero: true, max: 10, title: { display: true, text: '動作數量' } }, x: { ticks: { autoSkip: false, maxRotation: 60, minRotation: 45 } } },
+                        plugins: { legend: { display: false }, title: { display: true, text: '各章節課程動作數量概覽', font: { size: 18, family: "'Noto Sans TC', sans-serif" }, padding: { top: 10, bottom: 20 } }, tooltip: { titleFont: { family: "'Noto Sans TC', sans-serif" }, bodyFont: { family: "'Noto Sans TC', sans-serif" }} }
+                    }
+                });
+            }
+
+            init();
+        });
+    </script>
+</body>
+</html>
